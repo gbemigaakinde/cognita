@@ -129,7 +129,91 @@
     </button>
   </div>
   <p class="settings-footnote">You'll need to sign in again to use Cognita.</p>
+
+  <!-- ── Danger Zone ── -->
+  <div class="settings-group-label">Danger Zone</div>
+  <div class="settings-group">
+    <button class="settings-row settings-row--button settings-row--danger" id="deleteAccountBtn">
+      <span class="settings-row-text">
+        <span class="settings-row-label"><i class="ph ph-trash"></i> Delete your account</span>
+        <span class="settings-row-value" style="display:block; font-size: var(--text-sm); color: var(--text-3);">Permanently erases your data. This cannot be undone.</span>
+      </span>
+      <i class="ph ph-caret-right"></i>
+    </button>
+  </div>
 </main>
+
+<!-- ── Delete account modal (3 steps) ── -->
+<div class="modal-overlay" id="deleteAccountModal" hidden>
+  <div class="modal-box delete-account-box">
+    <div class="modal-header">
+      <h2 id="deleteStepTitle">Delete your account?</h2>
+      <button class="modal-close-btn" id="deleteModalCloseBtn" aria-label="Close">
+        <i class="ph ph-x"></i>
+      </button>
+    </div>
+
+    <!-- Step 1: what happens -->
+    <div class="modal-body delete-step" id="deleteStep1">
+      <p class="delete-warning-lead">This permanently deletes your Cognita account and everything in it. There is no way to undo this or recover your data afterward.</p>
+      <p class="delete-explains-label">Deleting your account removes:</p>
+      <ul class="delete-item-list">
+        <li>Your chat history and saved conversations</li>
+        <li>Resources, flashcards, and documents you created</li>
+        <li>Reminders and notification subscriptions</li>
+        <li>Scheduled social posts and AI Inbox items</li>
+        <li>Any connected accounts (Google, GitHub, Facebook/Instagram, Canva) and everything Cognita stored from them</li>
+        <li>Your subscription and billing record</li>
+        <li>Your sign-in itself — you'll need to create a new account to use Cognita again</li>
+      </ul>
+      <p class="delete-explains-label">If you have an active paid subscription, you'll need to cancel it from the Plan section above first — Cognita won't delete an account that's still being billed.</p>
+      <div class="delete-step-actions">
+        <button class="delete-btn-secondary" id="deleteStep1CancelBtn">Never mind</button>
+        <button class="delete-btn-danger" id="deleteStep1ContinueBtn">Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 2: type-to-confirm, paste disabled -->
+    <div class="modal-body delete-step" id="deleteStep2" hidden>
+      <p class="delete-explains-label">To confirm, type your account email exactly as shown below. You cannot paste it — this is intentional, so you actually read and mean this.</p>
+      <div class="delete-email-display" id="deleteEmailDisplay" tabindex="0" title="Click to select">—</div>
+      <label class="delete-input-label" for="deleteEmailInput">Type your email to confirm</label>
+      <input
+        type="text"
+        id="deleteEmailInput"
+        class="delete-email-input"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="you@example.com"
+      />
+      <p class="delete-mismatch-note" id="deleteMismatchNote" hidden>That doesn't match your account email yet.</p>
+      <div class="delete-step-actions">
+        <button class="delete-btn-secondary" id="deleteStep2BackBtn">Back</button>
+        <button class="delete-btn-danger" id="deleteStep2ContinueBtn" disabled>Continue</button>
+      </div>
+    </div>
+
+    <!-- Step 3: final, irreversible confirm -->
+    <div class="modal-body delete-step" id="deleteStep3" hidden>
+      <p class="delete-warning-lead">Last chance. Clicking the button below deletes your account right now — immediately, permanently, and irreversibly.</p>
+      <div class="delete-step-actions">
+        <button class="delete-btn-secondary" id="deleteStep3BackBtn">Back</button>
+        <button class="delete-btn-danger" id="deleteStep3ConfirmBtn">Yes, permanently delete my account</button>
+      </div>
+    </div>
+
+    <!-- Step 4: done -->
+    <div class="modal-body delete-step" id="deleteStep4" hidden>
+      <p class="delete-explains-label" id="deleteDoneMessage">Your account has been deleted.</p>
+      <p class="settings-footnote" id="deleteDoneCodeLine"></p>
+      <div class="delete-step-actions">
+        <button class="delete-btn-danger" id="deleteDoneOkBtn">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script type="module" src="/js/auth.js"></script>
 <script type="module">
@@ -509,6 +593,114 @@
       btn.disabled = false;
       btn.innerHTML = '<span class="settings-row-label">Cancel subscription</span><i class="ph ph-caret-right"></i>';
     }
+  });
+
+  // ── Delete account ──────────────────────────────────────────────
+  // Four-step modal: (1) explain exactly what gets deleted, (2) type
+  // the account email to confirm — paste blocked so this can't be
+  // satisfied by copying the display text right back into the field,
+  // (3) one last irreversible confirm, (4) done. The server
+  // (account-deletion-endpoint.js) re-checks the typed email against
+  // the verified identity's own email regardless of anything sent from
+  // here, so this UI is a safety rail for the person, not the actual
+  // security boundary.
+  const deleteModal = document.getElementById('deleteAccountModal');
+  const deleteSteps = ['deleteStep1', 'deleteStep2', 'deleteStep3', 'deleteStep4'];
+  const deleteEmailInput = document.getElementById('deleteEmailInput');
+  const deleteStep2ContinueBtn = document.getElementById('deleteStep2ContinueBtn');
+  const deleteMismatchNote = document.getElementById('deleteMismatchNote');
+
+  function showDeleteStep(name) {
+    for (const id of deleteSteps) {
+      document.getElementById(id).hidden = id !== name;
+    }
+  }
+
+  function openDeleteModal() {
+    document.getElementById('deleteEmailDisplay').textContent = user.email || '(no email on file)';
+    deleteEmailInput.value = '';
+    deleteStep2ContinueBtn.disabled = true;
+    deleteMismatchNote.hidden = true;
+    showDeleteStep('deleteStep1');
+    deleteModal.hidden = false;
+  }
+
+  function closeDeleteModal() {
+    deleteModal.hidden = true;
+  }
+
+  document.getElementById('deleteAccountBtn').addEventListener('click', openDeleteModal);
+  document.getElementById('deleteModalCloseBtn').addEventListener('click', closeDeleteModal);
+  document.getElementById('deleteStep1CancelBtn').addEventListener('click', closeDeleteModal);
+  document.getElementById('deleteStep1ContinueBtn').addEventListener('click', () => showDeleteStep('deleteStep2'));
+  document.getElementById('deleteStep2BackBtn').addEventListener('click', () => showDeleteStep('deleteStep1'));
+  document.getElementById('deleteStep3BackBtn').addEventListener('click', () => showDeleteStep('deleteStep2'));
+
+  // Block paste (and drag-drop text, and the middle-click paste some
+  // browsers still allow) into the confirmation field — the point is a
+  // small deliberate act of retyping, not a copy round-trip from the
+  // display text right above it.
+  ['paste', 'drop'].forEach((evt) => {
+    deleteEmailInput.addEventListener(evt, (e) => e.preventDefault());
+  });
+  deleteEmailInput.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  deleteEmailInput.addEventListener('input', () => {
+    const typed = deleteEmailInput.value.trim().toLowerCase();
+    const actual = (user.email || '').trim().toLowerCase();
+    const matches = !!actual && typed === actual;
+    deleteStep2ContinueBtn.disabled = !matches;
+    deleteMismatchNote.hidden = matches || typed.length === 0;
+  });
+
+  document.getElementById('deleteStep2ContinueBtn').addEventListener('click', () => {
+    if (deleteStep2ContinueBtn.disabled) return;
+    showDeleteStep('deleteStep3');
+  });
+
+  document.getElementById('deleteStep3ConfirmBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('deleteStep3ConfirmBtn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      const res = await window.Auth.authedFetch(WORKER_URL + '/api/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmEmail: deleteEmailInput.value.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          closeDeleteModal();
+          const goCancel = confirm(
+            (data.error || 'You have an active subscription. Please cancel it first.') +
+            '\n\nJump to the Plan section now?'
+          );
+          if (goCancel) document.getElementById('cancelPlanBtn')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          btn.disabled = false;
+          btn.textContent = 'Yes, permanently delete my account';
+          return;
+        }
+        throw new Error(data.error || 'Could not delete your account.');
+      }
+
+      document.getElementById('deleteDoneMessage').textContent = data.partial
+        ? 'Your account has been deleted. A few minor items may take a little longer to finish clearing — this will not affect you further.'
+        : 'Your account has been deleted.';
+      document.getElementById('deleteDoneCodeLine').textContent = 'Confirmation code: ' + data.confirmationCode;
+      showDeleteStep('deleteStep4');
+    } catch (e) {
+      alert('Something went wrong: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = 'Yes, permanently delete my account';
+    }
+  });
+
+  document.getElementById('deleteDoneOkBtn').addEventListener('click', async () => {
+    // The Auth user no longer exists server-side at this point, so this
+    // is just clearing the local session state, not a real sign-out call.
+    try { await window.Auth.logOut(); } catch (_) {}
+    window.location.href = '/login.html';
   });
 
   loadAccount();
