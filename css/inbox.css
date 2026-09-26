@@ -1,0 +1,115 @@
+/* css/inbox.css — AI Inbox page. Layered on shared.css + account.css,
+   same as scheduler.css — only styles that are new for this page live
+   here. */
+
+.inbox-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.inbox-tab {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inbox-tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.inbox-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  margin-bottom: var(--space-3);
+}
+
+.inbox-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.inbox-card-author {
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.inbox-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.inbox-badge--question   { background: var(--accent-subtle); color: var(--accent); }
+.inbox-badge--lead       { background: #dff3e3; color: #1e7a37; }
+.inbox-badge--complaint  { background: #fbe2df; color: #b3261e; }
+.inbox-badge--spam       { background: var(--bg-subtle); color: var(--text-3); }
+.inbox-badge--positive   { background: #dff3e3; color: #1e7a37; }
+.inbox-badge--other      { background: var(--bg-subtle); color: var(--text-3); }
+
+.inbox-card-text {
+  font-size: var(--text-md);
+  color: var(--text-1);
+  white-space: pre-wrap;
+}
+
+.inbox-card-draft {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  resize: vertical;
+}
+
+.inbox-card-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.inbox-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inbox-btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.inbox-btn--danger  { color: #b3261e; }
+.inbox-btn:disabled { opacity: 0.5; cursor: default; }
+
+.inbox-empty {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--text-3);
+}
