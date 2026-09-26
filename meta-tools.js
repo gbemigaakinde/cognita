@@ -290,6 +290,194 @@ export async function publishFacebookVideo(pageAccessToken, pageId, { videoUrl, 
   return data.id;
 }
 
+// ── AI Inbox: reply / hide (Part 1.4) ───────────────────────────────
+// Same URLSearchParams-body, same-error-shape style as
+// publishFacebookPost/publishInstagramPost above.
+
+/** Replies to a Facebook Page comment. `commentId` is the Graph API comment id. */
+export async function replyToFacebookComment(pageAccessToken, commentId, message) {
+  const body = new URLSearchParams({ message: message || '', access_token: pageAccessToken });
+  const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(commentId) + '/comments', { method: 'POST', body });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.error)) {
+    throw new Error('Facebook comment reply failed: ' + (data && data.error ? data.error.message : res.status));
+  }
+  return data.id;
+}
+
+/** Replies to an Instagram comment. `commentId` is the IG comment id. */
+export async function replyToInstagramComment(pageAccessToken, commentId, message) {
+  const body = new URLSearchParams({ message: message || '', access_token: pageAccessToken });
+  const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(commentId) + '/replies', { method: 'POST', body });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.error)) {
+    throw new Error('Instagram comment reply failed: ' + (data && data.error ? data.error.message : res.status));
+  }
+  return data.id;
+}
+
+/**
+ * Sends a Page/Instagram DM reply. `pageId` is the Page (or, for an IG
+ * DM, the linked IG account's own messaging endpoint is the Page id
+ * too — Meta unifies this under /{page-id}/messages for both).
+ * Callers (social-inbox.js) are responsible for the 24-hour messaging
+ * window check BEFORE calling this — this function still surfaces
+ * Meta's own rejection if that check was somehow stale, but does not
+ * re-derive it itself since it has no access to receivedAt here.
+ */
+export async function sendPageDirectMessage(pageAccessToken, pageId, recipientId, text) {
+  const body = new URLSearchParams({
+    recipient: JSON.stringify({ id: recipientId }),
+    message: JSON.stringify({ text: text || '' }),
+    access_token: pageAccessToken,
+  });
+  const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(pageId) + '/messages', { method: 'POST', body });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.error)) {
+    const err = data && data.error;
+    // Meta's "outside the 24-hour messaging window" rejection — code/
+    // subcode combination per current docs; surfaced with a clear
+    // isWindowExpired flag so social-inbox.js can give the user a
+    // specific message instead of a generic failure. Verify this
+    // code/subcode pair against Meta's live docs at deploy time, since
+    // Meta has changed these before.
+    if (err && (err.code === 10 || err.error_subcode === 2018278)) {
+      const e = new Error('Too much time has passed since their last message — Meta only allows a reply within 24 hours.');
+      e.isWindowExpired = true;
+      throw e;
+    }
+    throw new Error('Message send failed: ' + (err ? err.message : res.status));
+  }
+  return data.message_id || data.id;
+}
+
+/** Hides (or un-hides) a Facebook/Instagram comment. */
+export async function hideComment(pageAccessToken, commentId, hidden = true) {
+  const body = new URLSearchParams({ is_hidden: String(hidden), access_token: pageAccessToken });
+  const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(commentId), { method: 'POST', body });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.error)) {
+    throw new Error('Could not hide that comment: ' + (data && data.error ? data.error.message : res.status));
+  }
+  return true;
+}
+
+/**
+ * Subscribes a Page to the webhook fields the AI Inbox needs
+ * (comments/messages). Called once per Page, lazily, the first time a
+ * user opens the Inbox page — see social-inbox.js's syncPageOwners /
+ * social-inbox-endpoint.js's /api/inbox/subscribe. Instagram comments
+ * ride on the Page's own 'feed' subscription once the linked IG
+ * account is set up (per current Graph API v21.0 docs) — verify this
+ * still holds at deploy time, since Meta has occasionally required a
+ * separate 'instagram' object subscription instead.
+ */
+export async function subscribePageToWebhooks(pageAccessToken, pageId) {
+  const body = new URLSearchParams({
+    subscribed_fields: 'feed,messages,messaging_postbacks',
+    access_token: pageAccessToken,
+  });
+  const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(pageId) + '/subscribed_apps', { method: 'POST', body });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.error)) {
+    throw new Error('Could not subscribe Page to webhooks: ' + (data && data.error ? data.error.message : res.status));
+  }
+  return true;
+}
+
+// ── Insights Digest: public wrappers (Part 2.1) ─────────────────────
+// Thin exported wrappers around the same Graph API insights calls the
+// chat tool executors already use (_getPageInsights/_getInstagramInsights
+// below), pulling a fuller metric set for a digest rather than the
+// narrow set the chat tool asks for. Kept as separate functions rather
+// than widening the chat tool's own metric list, since a chat answer
+// wants a short read, not a full report's worth of numbers.
+
+/**
+ * Facebook Page insights + this period's post-level performance, for
+ * the Insights Digest. Field/metric names should be re-verified against
+ * current Graph API v21.0 docs at deploy time — Meta renames Page
+ * insight metrics periodically (this is the same caution the original
+ * chat tool's _getPageInsights already carries for its narrower set).
+ */
+export async function getPageInsights(uid, pageId, env) {
+  const pages = await listPages(uid, env);
+  const page = pages.find((p) => p.id === pageId);
+  if (!page) throw new Error('That Facebook Page is not connected.');
+
+  const [pageMetrics, posts] = await Promise.all([
+    _metaFetch('/' + encodeURIComponent(page.id) + '/insights', {
+      metric: 'page_impressions,page_engaged_users,page_fan_adds,page_fan_removes',
+      period: 'week',
+      access_token: page.pageAccessToken,
+    }).catch(() => ({ data: [] })),
+    _metaFetch('/' + encodeURIComponent(page.id) + '/posts', {
+      fields: 'message,created_time,insights.metric(post_impressions,post_engaged_users)',
+      limit: 25,
+      access_token: page.pageAccessToken,
+    }).catch(() => ({ data: [] })),
+  ]);
+
+  return {
+    pageId: page.id,
+    pageName: page.name,
+    metrics: (pageMetrics.data || []).map((m) => ({
+      metric: m.name,
+      latestValue: m.values && m.values.length ? m.values[m.values.length - 1].value : null,
+    })),
+    posts: (posts.data || []).map((p) => ({
+      message: (p.message || '').slice(0, 200),
+      createdAt: p.created_time,
+      insights: ((p.insights && p.insights.data) || []).map((i) => ({
+        metric: i.name,
+        value: i.values && i.values.length ? i.values[0].value : null,
+      })),
+    })),
+  };
+}
+
+/** Instagram account insights + recent media performance, for the Insights Digest. */
+export async function getInstagramInsights(uid, pageId, env) {
+  const pages = await listPages(uid, env);
+  const page = pages.find((p) => p.id === pageId);
+  if (!page) throw new Error('That Facebook Page is not connected.');
+  if (!page.instagram) return { pageId: page.id, pageName: page.name, instagram: false, metrics: [], media: [] };
+
+  const [igMetrics, media] = await Promise.all([
+    _metaFetch('/' + encodeURIComponent(page.instagram.id) + '/insights', {
+      metric: 'reach,profile_views,follower_count',
+      period: 'week',
+      access_token: page.pageAccessToken,
+    }).catch(() => ({ data: [] })),
+    _metaFetch('/' + encodeURIComponent(page.instagram.id) + '/media', {
+      fields: 'caption,timestamp,like_count,comments_count,insights.metric(reach,engagement)',
+      limit: 25,
+      access_token: page.pageAccessToken,
+    }).catch(() => ({ data: [] })),
+  ]);
+
+  return {
+    pageId: page.id,
+    pageName: page.name,
+    instagram: true,
+    instagramUsername: page.instagram.username,
+    metrics: (igMetrics.data || []).map((m) => ({
+      metric: m.name,
+      latestValue: m.values && m.values.length ? m.values[m.values.length - 1].value : null,
+    })),
+    media: (media.data || []).map((m) => ({
+      caption: (m.caption || '').slice(0, 200),
+      timestamp: m.timestamp,
+      likeCount: m.like_count,
+      commentsCount: m.comments_count,
+      insights: ((m.insights && m.insights.data) || []).map((i) => ({
+        metric: i.name,
+        value: i.values && i.values.length ? i.values[0].value : null,
+      })),
+    })),
+  };
+}
+
 async function _createFacebookPost(uid, args, env) {
   if (!args.message) throw new Error('message is required.');
   const page = await _getPageOrThrow(uid, args, env);
