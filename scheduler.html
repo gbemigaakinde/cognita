@@ -91,10 +91,35 @@
         <textarea id="postMessage" class="scheduler-input scheduler-textarea" maxlength="2200" placeholder="What do you want to say?"></textarea>
       </div>
 
-      <div class="scheduler-field" id="imageField" hidden>
-        <label class="scheduler-label" for="postImageUrl">Image URL</label>
-        <input id="postImageUrl" class="scheduler-input" type="url" placeholder="https://…/photo.jpg">
-        <span class="scheduler-hint">Instagram needs a publicly reachable image link — not a file upload.</span>
+      <div class="scheduler-field" id="mediaField">
+        <label class="scheduler-label" for="postMediaInput">Photo or video <span id="mediaOptionalTag" class="scheduler-hint" style="font-weight:400;"></span></label>
+
+        <div class="scheduler-dropzone" id="mediaDropzone" tabindex="0" role="button" aria-label="Upload a photo or video">
+          <div id="mediaDropzoneEmpty">
+            <i class="ph ph-upload-simple"></i>
+            <span>Click to choose a file, or drag one here</span>
+            <span class="scheduler-hint">JPEG/PNG/WEBP up to 15MB, or MP4/MOV up to 200MB</span>
+          </div>
+          <div id="mediaPreviewWrap" hidden>
+            <img id="mediaPreviewImg" alt="" hidden>
+            <video id="mediaPreviewVideo" muted playsinline hidden></video>
+            <div class="scheduler-media-info">
+              <span id="mediaPreviewName"></span>
+              <button type="button" id="mediaRemoveBtn" class="scheduler-cancel-btn" aria-label="Remove file"><i class="ph ph-x"></i></button>
+            </div>
+          </div>
+        </div>
+        <input id="postMediaInput" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" hidden>
+
+        <div id="mediaUploadProgress" class="scheduler-progress" hidden>
+          <div class="scheduler-progress-bar" id="mediaUploadProgressBar"></div>
+        </div>
+        <span class="scheduler-hint" id="mediaUploadStatus"></span>
+
+        <details id="imageUrlFallback">
+          <summary class="scheduler-hint">Or use an existing image URL instead</summary>
+          <input id="postImageUrl" class="scheduler-input" type="url" placeholder="https://…/photo.jpg" style="margin-top: var(--space-2);">
+        </details>
       </div>
 
       <div class="scheduler-field" id="linkField">
@@ -147,7 +172,8 @@
   const listWrap = document.getElementById('schedulerListWrap');
   const targetPageSelect = document.getElementById('targetPage');
   const messageField = document.getElementById('messageField');
-  const imageField = document.getElementById('imageField');
+  const mediaField = document.getElementById('mediaField');
+  const mediaOptionalTag = document.getElementById('mediaOptionalTag');
   const linkField = document.getElementById('linkField');
   const postMessage = document.getElementById('postMessage');
   const postImageUrl = document.getElementById('postImageUrl');
@@ -158,6 +184,27 @@
   const composerForm = document.getElementById('composerForm');
   const composerSubmit = document.getElementById('composerSubmit');
   const scheduledPostsGrid = document.getElementById('scheduledPostsGrid');
+
+  const mediaDropzone = document.getElementById('mediaDropzone');
+  const mediaDropzoneEmpty = document.getElementById('mediaDropzoneEmpty');
+  const mediaPreviewWrap = document.getElementById('mediaPreviewWrap');
+  const mediaPreviewImg = document.getElementById('mediaPreviewImg');
+  const mediaPreviewVideo = document.getElementById('mediaPreviewVideo');
+  const mediaPreviewName = document.getElementById('mediaPreviewName');
+  const mediaRemoveBtn = document.getElementById('mediaRemoveBtn');
+  const postMediaInput = document.getElementById('postMediaInput');
+  const mediaUploadProgress = document.getElementById('mediaUploadProgress');
+  const mediaUploadProgressBar = document.getElementById('mediaUploadProgressBar');
+  const mediaUploadStatus = document.getElementById('mediaUploadStatus');
+
+  const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+  const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+
+  // Populated once handleFileChosen()'s upload finishes; cleared on
+  // remove/replace. This — not the file input's own value — is what
+  // actually gets sent to /api/social/schedule.
+  let uploadedMedia = null; // { key, fileId, contentType, kind, size }
+  let uploadInFlight = false;
 
   // Default the date/time picker to an hour from now, in the visitor's
   // own local time zone — the browser's date/time inputs are always
@@ -196,11 +243,122 @@
   function updateFieldsForTarget() {
     const { target } = currentTarget();
     const isInstagram = target === 'instagram';
-    imageField.hidden = !isInstagram;
     linkField.hidden = isInstagram; // Facebook-only field
     postMessage.placeholder = isInstagram ? 'Write a caption…' : 'What do you want to say?';
+    mediaOptionalTag.textContent = isInstagram ? '(required)' : '(optional)';
   }
   targetPageSelect.addEventListener('change', updateFieldsForTarget);
+
+  // ── Media upload ──────────────────────────────────────────────────────
+
+  function resetMediaPicker() {
+    uploadedMedia = null;
+    postMediaInput.value = '';
+    mediaPreviewWrap.hidden = true;
+    mediaDropzoneEmpty.hidden = false;
+    mediaPreviewImg.hidden = true;
+    mediaPreviewVideo.hidden = true;
+    mediaPreviewVideo.removeAttribute('src');
+    mediaUploadProgress.hidden = true;
+    mediaUploadProgressBar.style.width = '0%';
+    mediaUploadStatus.textContent = '';
+  }
+
+  function showLocalPreview(file, kind) {
+    const url = URL.createObjectURL(file);
+    if (kind === 'video') {
+      mediaPreviewVideo.src = url;
+      mediaPreviewVideo.hidden = false;
+      mediaPreviewImg.hidden = true;
+    } else {
+      mediaPreviewImg.src = url;
+      mediaPreviewImg.hidden = false;
+      mediaPreviewVideo.hidden = true;
+    }
+    mediaPreviewName.textContent = file.name + ' (' + (file.size / (1024 * 1024)).toFixed(1) + ' MB)';
+    mediaDropzoneEmpty.hidden = true;
+    mediaPreviewWrap.hidden = false;
+  }
+
+  // Uploads with progress via XHR (fetch has no upload-progress event),
+  // so a multi-minute mobile-upload of a video doesn't just sit there
+  // looking frozen.
+  function uploadFile(file, kind) {
+    return new Promise(async (resolve, reject) => {
+      const idToken = await window.Auth.getIdToken();
+      if (!idToken) { reject(new Error('Not signed in.')); return; }
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', WORKER_URL + '/api/social/media?filename=' + encodeURIComponent(file.name));
+      xhr.setRequestHeader('Content-Type', file.type);
+      xhr.setRequestHeader('Authorization', 'Bearer ' + idToken);
+
+      xhr.upload.addEventListener('progress', (ev) => {
+        if (!ev.lengthComputable) return;
+        mediaUploadProgressBar.style.width = Math.round((ev.loaded / ev.total) * 100) + '%';
+      });
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); }
+          catch (e) { reject(new Error('Upload succeeded but the response was invalid.')); }
+        } else {
+          let msg = 'Could not upload that file.';
+          try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+          reject(new Error(msg));
+        }
+      });
+      xhr.addEventListener('error', () => reject(new Error('Upload failed. Check your connection and try again.')));
+      xhr.send(file);
+    });
+  }
+
+  async function handleFileChosen(file) {
+    if (!file) return;
+    const kind = file.type.startsWith('video/') ? 'video' : file.type.startsWith('image/') ? 'image' : null;
+    if (!kind) {
+      mediaUploadStatus.textContent = 'Unsupported file type. Use JPEG, PNG, WEBP, MP4 or MOV.';
+      return;
+    }
+    const maxBytes = kind === 'video' ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (file.size > maxBytes) {
+      mediaUploadStatus.textContent = 'That file is too large (max ' + Math.round(maxBytes / (1024 * 1024)) + ' MB for ' + kind + ').';
+      return;
+    }
+
+    showLocalPreview(file, kind);
+    mediaUploadProgress.hidden = false;
+    mediaUploadProgressBar.style.width = '0%';
+    mediaUploadStatus.textContent = 'Uploading…';
+    uploadInFlight = true;
+    composerSubmit.disabled = true;
+
+    try {
+      const result = await uploadFile(file, kind);
+      uploadedMedia = { key: result.key, fileId: result.fileId, contentType: result.contentType, kind: result.kind, size: result.size };
+      mediaUploadStatus.textContent = 'Uploaded ✓';
+    } catch (e) {
+      mediaUploadStatus.textContent = e.message || 'Upload failed.';
+      resetMediaPicker();
+    } finally {
+      uploadInFlight = false;
+      composerSubmit.disabled = false;
+    }
+  }
+
+  mediaDropzone.addEventListener('click', () => postMediaInput.click());
+  mediaDropzone.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); postMediaInput.click(); }
+  });
+  mediaDropzone.addEventListener('dragover', (ev) => { ev.preventDefault(); mediaDropzone.classList.add('scheduler-dropzone--over'); });
+  mediaDropzone.addEventListener('dragleave', () => mediaDropzone.classList.remove('scheduler-dropzone--over'));
+  mediaDropzone.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    mediaDropzone.classList.remove('scheduler-dropzone--over');
+    const file = ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (file) handleFileChosen(file);
+  });
+  postMediaInput.addEventListener('change', () => handleFileChosen(postMediaInput.files[0]));
+  mediaRemoveBtn.addEventListener('click', (ev) => { ev.stopPropagation(); resetMediaPicker(); });
 
   async function loadPages() {
     try {
@@ -252,12 +410,19 @@
     }
   }
 
+  function mediaTag(post) {
+    const kind = post.media && post.media.kind;
+    if (!kind) return '';
+    const icon = kind === 'video' ? 'ph-video-camera' : 'ph-image';
+    return ' <i class="ph ' + icon + '" title="' + kind + ' attached" style="color: var(--text-3);"></i>';
+  }
+
   function postRowHtml(post) {
-    const preview = (post.message || '').slice(0, 80) || (post.target === 'instagram' ? '(image post)' : '');
+    const preview = (post.message || '').slice(0, 80) || (post.media ? '(' + post.media.kind + ' post)' : (post.target === 'instagram' ? '(image post)' : ''));
     return (
       '<div class="settings-row scheduler-post-row" data-id="' + post.id + '">' +
         '<div class="settings-row-text">' +
-          '<span class="settings-row-label">' + post.pageLabel + ' ' + statusBadge(post.status) + '</span>' +
+          '<span class="settings-row-label">' + post.pageLabel + mediaTag(post) + ' ' + statusBadge(post.status) + '</span>' +
           '<span class="settings-row-value" style="display:block; font-size: var(--text-sm); color: var(--text-3);">' +
             formatWhen(post.scheduledFor) + (preview ? ' — "' + preview + (preview.length === 80 ? '…' : '') + '"' : '') +
           '</span>' +
@@ -304,11 +469,23 @@
   composerForm.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     composerError.hidden = true;
+
+    if (uploadInFlight) {
+      composerError.textContent = 'Please wait for the upload to finish.';
+      composerError.hidden = false;
+      return;
+    }
+
     composerSubmit.disabled = true;
 
     try {
       const { target, pageId } = currentTarget();
       if (!target || !pageId) throw new Error('Choose where to post first.');
+
+      const imageUrlValue = postImageUrl.value.trim();
+      if (target === 'instagram' && !uploadedMedia && !imageUrlValue) {
+        throw new Error('Add a photo or video, or an image URL, for an Instagram post.');
+      }
 
       // The date/time inputs are local-time; combine and convert to a
       // real instant so the server never has to guess the visitor's zone.
@@ -320,7 +497,11 @@
         message: postMessage.value.trim(),
         scheduledFor: localDate.toISOString(),
       };
-      if (target === 'instagram') body.imageUrl = postImageUrl.value.trim();
+      if (uploadedMedia) {
+        body.media = { key: uploadedMedia.key, fileId: uploadedMedia.fileId, contentType: uploadedMedia.contentType, size: uploadedMedia.size };
+      } else if (target === 'instagram' && imageUrlValue) {
+        body.imageUrl = imageUrlValue;
+      }
       if (target === 'facebook' && postLink.value.trim()) body.link = postLink.value.trim();
 
       const res = await window.Auth.authedFetch(WORKER_URL + '/api/social/schedule', {
@@ -334,6 +515,7 @@
       postMessage.value = '';
       postImageUrl.value = '';
       postLink.value = '';
+      resetMediaPicker();
       await loadScheduledPosts();
     } catch (e) {
       composerError.textContent = e.message;
