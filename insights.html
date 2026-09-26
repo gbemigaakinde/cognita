@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>AI Insights Digest — Cognita</title>
+<link rel="icon" href="/assets/cognita.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..900&display=swap">
+<link rel="stylesheet" href="/css/shared.css">
+<link rel="stylesheet" href="/css/account.css">
+<link rel="stylesheet" href="/css/insights.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+</head>
+<body class="account-page">
+
+<header class="account-topbar">
+  <a href="/app.html" class="account-back">
+    <i class="ph ph-arrow-left"></i> Back to Cognita
+  </a>
+</header>
+
+<main class="account-shell">
+  <h1 class="account-page-title">AI Insights Digest</h1>
+
+  <div id="insightsSkeleton" aria-hidden="true">
+    <div class="settings-group">
+      <div class="settings-row skeleton" style="height:52px;"></div>
+      <div class="settings-row skeleton" style="height:52px;"></div>
+      <div class="settings-row skeleton" style="height:52px;"></div>
+    </div>
+  </div>
+
+  <div class="settings-group" id="insightsBlockedNotice" hidden>
+    <div class="settings-row">
+      <span class="settings-row-text">
+        <span class="settings-row-label" id="insightsBlockedTitle">Facebook isn't connected yet</span>
+        <span class="settings-row-value" style="display:block; font-size: var(--text-sm); color: var(--text-3);" id="insightsBlockedDesc">
+          Connect Facebook in Account Settings to generate a performance digest.
+        </span>
+      </span>
+    </div>
+    <a href="/account.html" class="settings-row settings-row--button">
+      <span class="settings-row-label">Go to Account Settings</span>
+      <i class="ph ph-caret-right"></i>
+    </a>
+  </div>
+
+  <div id="insightsContentWrap" hidden>
+    <div class="settings-group-label">Delivery preferences</div>
+    <form class="settings-group" id="scheduleForm" style="padding: var(--space-4);">
+      <div class="insights-field">
+        <span class="insights-label">Frequency</span>
+        <select id="frequencySelect" class="insights-input">
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+
+      <div class="insights-field">
+        <span class="insights-label">Pages to include</span>
+        <div class="insights-page-checks" id="pageChecks"></div>
+      </div>
+
+      <div class="insights-field">
+        <div class="insights-toggle-row">
+          <span class="insights-label">Email me the digest automatically</span>
+          <input type="checkbox" id="deliverEmailCheck">
+        </div>
+        <input type="email" id="emailAddressInput" class="insights-input" placeholder="you@example.com">
+      </div>
+
+      <div class="insights-field">
+        <div class="insights-toggle-row">
+          <span class="insights-label">Turn on scheduled delivery</span>
+          <input type="checkbox" id="enabledCheck">
+        </div>
+        <span class="scheduler-hint">WhatsApp delivery is manual — a "Share to WhatsApp" button appears on each digest below; it opens WhatsApp with the report link pre-filled so you pick who to send it to.</span>
+      </div>
+
+      <button type="submit" class="insights-submit" id="saveScheduleBtn">Save preferences</button>
+    </form>
+
+    <div class="settings-group-label" style="margin-top: var(--space-5);">Generate now</div>
+    <div class="settings-group" style="padding: var(--space-4);">
+      <button class="insights-generate-btn" id="generateNowBtn">Generate a digest now</button>
+      <span class="scheduler-hint" id="generateStatus"></span>
+    </div>
+
+    <div class="settings-group-label" style="margin-top: var(--space-5);">History</div>
+    <div id="digestHistory"></div>
+    <div class="inbox-empty" id="historyEmpty" hidden>No digests yet — generate one above.</div>
+  </div>
+
+</main>
+
+<script type="module" src="/js/auth.js"></script>
+<script type="module">
+  const WORKER_URL = 'https://api.cognita.com.ng';
+
+  const user = await window.Auth.requireAuthOrRedirect();
+  if (!user) throw new Error('redirecting');
+
+  const skeleton = document.getElementById('insightsSkeleton');
+  const blockedNotice = document.getElementById('insightsBlockedNotice');
+  const blockedTitle = document.getElementById('insightsBlockedTitle');
+  const blockedDesc = document.getElementById('insightsBlockedDesc');
+  const contentWrap = document.getElementById('insightsContentWrap');
+  const pageChecks = document.getElementById('pageChecks');
+  const scheduleForm = document.getElementById('scheduleForm');
+  const frequencySelect = document.getElementById('frequencySelect');
+  const deliverEmailCheck = document.getElementById('deliverEmailCheck');
+  const emailAddressInput = document.getElementById('emailAddressInput');
+  const enabledCheck = document.getElementById('enabledCheck');
+  const generateNowBtn = document.getElementById('generateNowBtn');
+  const generateStatus = document.getElementById('generateStatus');
+  const digestHistory = document.getElementById('digestHistory');
+  const historyEmpty = document.getElementById('historyEmpty');
+
+  let isBlocked = false;
+
+  function showBlocked(title, desc) {
+    isBlocked = true;
+    skeleton.hidden = true;
+    contentWrap.hidden = true;
+    blockedNotice.hidden = false;
+    blockedTitle.textContent = title;
+    blockedDesc.textContent = desc;
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function loadPages() {
+    const res = await window.Auth.authedFetch(WORKER_URL + '/api/social/pages');
+    if (res.status === 409 || res.status === 403) {
+      const body = await res.json().catch(() => ({}));
+      showBlocked(res.status === 403 ? 'Upgrade required' : "Facebook isn't connected", body.error || 'Connect Facebook in Account Settings first.');
+      return [];
+    }
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.pages || [];
+  }
+
+  async function loadSchedule(pages) {
+    const res = await window.Auth.authedFetch(WORKER_URL + '/api/insights/schedule');
+    if (res.status === 403) {
+      const body = await res.json().catch(() => ({}));
+      showBlocked('Upgrade required', body.error || 'The AI Insights Digest requires Cognita Plus or higher.');
+      return;
+    }
+    if (!res.ok) return;
+    const { schedule } = await res.json();
+
+    pageChecks.innerHTML = pages.map((p) => `
+      <label class="insights-toggle-row">
+        <span>${escapeHtml(p.name)}${p.instagram ? ' (+ Instagram)' : ''}</span>
+        <input type="checkbox" class="page-check" value="${escapeHtml(p.id)}" ${schedule.pageIds.includes(p.id) ? 'checked' : ''}>
+      </label>
+    `).join('') || '<span class="scheduler-hint">No connected Pages yet.</span>';
+
+    frequencySelect.value = schedule.frequency || 'weekly';
+    deliverEmailCheck.checked = !!schedule.deliverEmail;
+    emailAddressInput.value = schedule.emailAddress || user.email || '';
+    enabledCheck.checked = !!schedule.enabled;
+
+    skeleton.hidden = true;
+    blockedNotice.hidden = true;
+    contentWrap.hidden = false;
+  }
+
+  scheduleForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = document.getElementById('saveScheduleBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    const pageIds = Array.from(document.querySelectorAll('.page-check:checked')).map((c) => c.value);
+
+    try {
+      const res = await window.Auth.authedFetch(WORKER_URL + '/api/insights/schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          frequency: frequencySelect.value,
+          pageIds,
+          deliverEmail: deliverEmailCheck.checked,
+          emailAddress: emailAddressInput.value || null,
+          enabled: enabledCheck.checked,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Could not save your preferences.');
+      }
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save preferences';
+    }
+  });
+
+  function renderDigest(d) {
+    const div = document.createElement('div');
+    div.className = 'insights-digest-card';
+    const period = d.periodStart && d.periodEnd
+      ? new Date(d.periodStart).toLocaleDateString() + ' – ' + new Date(d.periodEnd).toLocaleDateString()
+      : '';
+    const highlight = d.summary && d.summary.highlights && d.summary.highlights[0] ? d.summary.highlights[0] : '';
+    div.innerHTML = `
+      <div class="insights-digest-period">${escapeHtml(period)}</div>
+      <div class="insights-digest-highlight">${escapeHtml(highlight)}</div>
+      <div class="insights-status-dot">
+        ${d.status === 'ready' ? '✓ Ready' : d.status === 'generating' ? '… Generating' : '✗ Failed'}
+        ${d.deliveredTo && d.deliveredTo.email ? ' · ✓ Emailed' : ''}
+      </div>
+      ${d.status === 'ready' ? `
+        <div class="insights-digest-actions">
+          <a class="insights-link-btn" href="${d.pdfUrl}" target="_blank" rel="noopener"><i class="ph ph-file-pdf"></i> Download PDF</a>
+          <a class="insights-link-btn insights-link-btn--whatsapp" href="${d.whatsappShareUrl}" target="_blank" rel="noopener"><i class="ph ph-whatsapp-logo"></i> Share to WhatsApp</a>
+        </div>
+      ` : ''}
+    `;
+    return div;
+  }
+
+  async function loadHistory() {
+    const res = await window.Auth.authedFetch(WORKER_URL + '/api/insights/history');
+    if (!res.ok) return;
+    const { digests } = await res.json();
+    digestHistory.innerHTML = '';
+    if (!digests.length) {
+      historyEmpty.hidden = false;
+    } else {
+      historyEmpty.hidden = true;
+      for (const d of digests) digestHistory.appendChild(renderDigest(d));
+    }
+  }
+
+  generateNowBtn.addEventListener('click', async () => {
+    const pageIds = Array.from(document.querySelectorAll('.page-check:checked')).map((c) => c.value);
+    if (!pageIds.length) {
+      generateStatus.textContent = 'Select at least one Page above first.';
+      return;
+    }
+    generateNowBtn.disabled = true;
+    generateStatus.textContent = 'Generating — this can take up to a minute…';
+    try {
+      const res = await window.Auth.authedFetch(WORKER_URL + '/api/insights/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageIds, deliverEmail: deliverEmailCheck.checked, emailAddress: emailAddressInput.value || null }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        generateStatus.textContent = body.error || 'Could not generate your digest.';
+      } else {
+        generateStatus.textContent = 'Digest ready — see it below.';
+        await loadHistory();
+      }
+    } finally {
+      generateNowBtn.disabled = false;
+    }
+  });
+
+  const pages = await loadPages();
+  if (!isBlocked) {
+    await loadSchedule(pages);
+    await loadHistory();
+  }
+</script>
+
+</body>
+</html>
