@@ -207,3 +207,123 @@
 @media (max-width: 480px) {
   .account-shell { padding-left: var(--space-4); padding-right: var(--space-4); }
 }
+
+/* ── Delete account modal ──────────────────────────────────────────
+   Self-contained: account.html only links shared.css + account.css
+   (not app.css, where the reminders.css comment shows the shared
+   .modal-* classes actually live), so the base .modal-overlay/.modal-box
+   classes used above are defined fresh here rather than assumed. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  z-index: 1000;
+}
+.modal-overlay[hidden] { display: none; }
+.modal-box {
+  background: var(--bg-elevated, var(--bg-1));
+  border-radius: var(--radius-lg, 12px);
+  width: min(480px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.modal-header h2 { font-size: var(--text-lg); font-weight: 600; color: var(--text-1); margin: 0; }
+.modal-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 1.25rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: var(--space-1);
+}
+.modal-close-btn:hover { color: var(--text-1); }
+.modal-body { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+
+.delete-warning-lead {
+  color: var(--danger, #d33);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.delete-explains-label { color: var(--text-2); font-size: var(--text-sm); margin: 0; }
+.delete-item-list {
+  margin: 0;
+  padding-left: var(--space-5, 20px);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.delete-step-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.delete-btn-secondary {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.delete-btn-secondary:hover { background: var(--bg-2); }
+.delete-btn-danger {
+  background: var(--danger, #d33);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.delete-btn-danger:hover:not(:disabled) { opacity: 0.88; }
+.delete-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* The email people must type against — selectable/copyable on purpose
+   (user-select: text, not "all": no fake-input trick, just a normal
+   selectable text block) while the actual confirmation field below it
+   blocks paste, so retyping is a small deliberate action rather than
+   the modal effectively confirming itself. */
+.delete-email-display {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3);
+  user-select: text;
+  word-break: break-all;
+}
+.delete-input-label { font-size: var(--text-xs); color: var(--text-3); }
+.delete-email-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3);
+  width: 100%;
+  box-sizing: border-box;
+}
+.delete-email-input:focus { outline: none; border-color: var(--danger, #d33); }
+.delete-mismatch-note { color: var(--danger, #d33); font-size: var(--text-xs); margin: 0; }
