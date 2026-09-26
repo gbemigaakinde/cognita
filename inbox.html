@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>AI Inbox — Cognita</title>
+<link rel="icon" href="/assets/cognita.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..900&display=swap">
+<link rel="stylesheet" href="/css/shared.css">
+<link rel="stylesheet" href="/css/account.css">
+<link rel="stylesheet" href="/css/inbox.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+</head>
+<body class="account-page">
+
+<header class="account-topbar">
+  <a href="/app.html" class="account-back">
+    <i class="ph ph-arrow-left"></i> Back to Cognita
+  </a>
+</header>
+
+<main class="account-shell">
+  <h1 class="account-page-title">AI Inbox</h1>
+
+  <div id="inboxSkeleton" aria-hidden="true">
+    <div class="settings-group">
+      <div class="settings-row skeleton" style="height:120px;"></div>
+      <div class="settings-row skeleton" style="height:120px;"></div>
+      <div class="settings-row skeleton" style="height:120px;"></div>
+    </div>
+  </div>
+
+  <div class="settings-group" id="inboxBlockedNotice" hidden>
+    <div class="settings-row">
+      <span class="settings-row-text">
+        <span class="settings-row-label" id="inboxBlockedTitle">Facebook isn't connected yet</span>
+        <span class="settings-row-value" style="display:block; font-size: var(--text-sm); color: var(--text-3);" id="inboxBlockedDesc">
+          Connect Facebook in Account Settings to see comments and DMs here.
+        </span>
+      </span>
+    </div>
+    <a href="/account.html" class="settings-row settings-row--button">
+      <span class="settings-row-label">Go to Account Settings</span>
+      <i class="ph ph-caret-right"></i>
+    </a>
+  </div>
+
+  <div id="inboxContentWrap" hidden>
+    <div class="settings-group" id="subscribePrompt" hidden style="margin-bottom: var(--space-4);">
+      <div class="settings-row">
+        <span class="settings-row-text">
+          <span class="settings-row-label">Enable real-time Inbox</span>
+          <span class="settings-row-value" style="display:block; font-size: var(--text-sm); color: var(--text-3);">
+            One-time setup so new comments and DMs start showing up here automatically.
+          </span>
+        </span>
+        <button class="inbox-btn inbox-btn--primary" id="subscribeBtn">Enable</button>
+      </div>
+    </div>
+
+    <div class="inbox-tabs" id="inboxTabs">
+      <button class="inbox-tab inbox-tab--active" data-status="" data-category="">All</button>
+      <button class="inbox-tab" data-status="new" data-category="">Needs Reply</button>
+      <button class="inbox-tab" data-status="" data-category="lead">Leads</button>
+      <button class="inbox-tab" data-status="" data-category="complaint">Complaints</button>
+      <button class="inbox-tab" data-status="spam" data-category="">Spam</button>
+    </div>
+
+    <div id="inboxList"></div>
+    <div class="inbox-empty" id="inboxEmpty" hidden>Nothing here yet — new comments and DMs will show up automatically.</div>
+  </div>
+
+</main>
+
+<script type="module" src="/js/auth.js"></script>
+<script type="module">
+  const WORKER_URL = 'https://api.cognita.com.ng';
+  const POLL_INTERVAL_MS = 25000;
+
+  const user = await window.Auth.requireAuthOrRedirect();
+  if (!user) throw new Error('redirecting');
+
+  const skeleton = document.getElementById('inboxSkeleton');
+  const blockedNotice = document.getElementById('inboxBlockedNotice');
+  const blockedTitle = document.getElementById('inboxBlockedTitle');
+  const blockedDesc = document.getElementById('inboxBlockedDesc');
+  const contentWrap = document.getElementById('inboxContentWrap');
+  const subscribePrompt = document.getElementById('subscribePrompt');
+  const subscribeBtn = document.getElementById('subscribeBtn');
+  const tabsWrap = document.getElementById('inboxTabs');
+  const listWrap = document.getElementById('inboxList');
+  const emptyWrap = document.getElementById('inboxEmpty');
+
+  let currentStatus = '';
+  let currentCategory = '';
+  let pollTimer = null;
+  let hasSubscribed = localStorage.getItem('cognita_inbox_subscribed') === '1';
+
+  function showBlocked(title, desc) {
+    skeleton.hidden = true;
+    contentWrap.hidden = true;
+    blockedNotice.hidden = false;
+    blockedTitle.textContent = title;
+    blockedDesc.textContent = desc;
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function renderItem(item) {
+    const card = document.createElement('div');
+    card.className = 'inbox-card';
+    const kindLabel = item.kind === 'dm' ? 'DM' : 'Comment';
+    const platformLabel = item.platform === 'instagram' ? 'Instagram' : 'Facebook';
+    const category = item.category || 'other';
+    const canReply = item.status !== 'replied' && item.status !== 'dismissed' && item.status !== 'spam';
+
+    card.innerHTML = `
+      <div class="inbox-card-head">
+        <span class="inbox-card-author">${escapeHtml(item.authorName || item.authorId || 'Someone')}</span>
+        <span>· ${platformLabel} ${kindLabel}</span>
+        ${item.category ? `<span class="inbox-badge inbox-badge--${category}">${category}</span>` : ''}
+        ${item.status === 'replied' ? '<span class="inbox-badge inbox-badge--positive">replied</span>' : ''}
+      </div>
+      <div class="inbox-card-text">${escapeHtml(item.text)}</div>
+      ${canReply ? `
+        <textarea class="inbox-card-draft" data-id="${item.id}">${escapeHtml(item.aiDraftReply || '')}</textarea>
+        <div class="inbox-card-actions">
+          <button class="inbox-btn inbox-btn--primary" data-action="reply" data-id="${item.id}">Send</button>
+          <button class="inbox-btn" data-action="regenerate" data-id="${item.id}">Regenerate</button>
+          <button class="inbox-btn" data-action="dismiss" data-id="${item.id}">Dismiss</button>
+          <button class="inbox-btn inbox-btn--danger" data-action="spam" data-id="${item.id}">Mark as spam</button>
+        </div>
+      ` : ''}
+    `;
+    return card;
+  }
+
+  async function loadItems() {
+    const params = new URLSearchParams();
+    if (currentStatus) params.set('status', currentStatus);
+    if (currentCategory) params.set('category', currentCategory);
+
+    const res = await window.Auth.authedFetch(WORKER_URL + '/api/inbox?' + params.toString());
+    if (res.status === 409) {
+      const body = await res.json().catch(() => ({}));
+      showBlocked('Reconnect Facebook for the Inbox', body.error || 'Reconnect Facebook in Account Settings to enable the Inbox.');
+      return;
+    }
+    if (res.status === 403) {
+      const body = await res.json().catch(() => ({}));
+      showBlocked('Upgrade required', body.error || 'The AI Inbox requires Cognita Plus or higher.');
+      return;
+    }
+    if (!res.ok) return;
+
+    const data = await res.json();
+    skeleton.hidden = true;
+    blockedNotice.hidden = true;
+    contentWrap.hidden = false;
+    subscribePrompt.hidden = hasSubscribed;
+
+    listWrap.innerHTML = '';
+    if (!data.items.length) {
+      emptyWrap.hidden = false;
+    } else {
+      emptyWrap.hidden = true;
+      for (const item of data.items) listWrap.appendChild(renderItem(item));
+    }
+  }
+
+  subscribeBtn.addEventListener('click', async () => {
+    subscribeBtn.disabled = true;
+    subscribeBtn.textContent = 'Enabling…';
+    try {
+      const res = await window.Auth.authedFetch(WORKER_URL + '/api/inbox/subscribe', { method: 'POST' });
+      if (res.ok) {
+        hasSubscribed = true;
+        localStorage.setItem('cognita_inbox_subscribed', '1');
+        subscribePrompt.hidden = true;
+      }
+    } finally {
+      subscribeBtn.disabled = false;
+      subscribeBtn.textContent = 'Enable';
+    }
+  });
+
+  tabsWrap.addEventListener('click', (e) => {
+    const btn = e.target.closest('.inbox-tab');
+    if (!btn) return;
+    tabsWrap.querySelectorAll('.inbox-tab').forEach((b) => b.classList.remove('inbox-tab--active'));
+    btn.classList.add('inbox-tab--active');
+    currentStatus = btn.dataset.status || '';
+    currentCategory = btn.dataset.category || '';
+    loadItems();
+  });
+
+  listWrap.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const card = btn.closest('.inbox-card');
+    const action = btn.dataset.action;
+
+    btn.disabled = true;
+    try {
+      if (action === 'reply') {
+        const text = card.querySelector('.inbox-card-draft').value;
+        const res = await window.Auth.authedFetch(WORKER_URL + '/api/inbox/' + id + '/reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          alert(body.error || 'Could not send that reply.');
+        }
+      } else if (action === 'regenerate') {
+        const res = await window.Auth.authedFetch(WORKER_URL + '/api/inbox/' + id + '/regenerate', { method: 'POST' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          alert(body.error || 'Could not regenerate a draft.');
+        }
+      } else if (action === 'dismiss') {
+        await window.Auth.authedFetch(WORKER_URL + '/api/inbox/' + id + '/dismiss', { method: 'POST' });
+      } else if (action === 'spam') {
+        await window.Auth.authedFetch(WORKER_URL + '/api/inbox/' + id + '/spam', { method: 'POST' });
+      }
+      await loadItems();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadItems();
+    }, POLL_INTERVAL_MS);
+  }
+
+  await loadItems();
+  startPolling();
+</script>
+
+</body>
+</html>
