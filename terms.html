@@ -40,7 +40,7 @@
 <main class="legal-shell">
   <div class="page-top-spacer"></div>
   <h1>Terms of Service</h1>
-  <p class="legal-updated">Last updated: <span id="lastUpdated"></span></p>
+  <p class="legal-updated">Last updated: September 26, 2026</p>
   <p>
     These Terms of Service explain the rules that apply when you use Cognita.
     By creating an account or using the Service, you agree to these Terms. If you
@@ -77,11 +77,15 @@
       your own accounts on supported third-party platforms so Cognita can act
       on your behalf within that platform. This includes social media
       management features for Facebook Pages and Instagram accounts (publishing
-      content, and reading and responding to messages and comments), and Google
-      Workspace features for your own Google Account (viewing and managing
-      your Google Calendar events, creating and editing files that Cognita
+      content, reading and responding to messages and comments through the AI Inbox
+      feature, and generating performance digests through the AI Insights Digest
+      feature), Google Workspace features for your own Google Account (viewing and
+      managing your Google Calendar events, creating and editing files that Cognita
       itself creates in your Google Drive, and sending email or managing Gmail
-      labels through Gmail). Features available through the Service may
+      labels through Gmail), GitHub features for your own GitHub account (reading
+      and writing files in repositories you choose to work with), and Canva
+      features for your own Canva account (creating, editing, and managing
+      designs, folders, and assets). Features available through the Service may
       change over time as we improve, maintain, or update Cognita.
     </p>
 <p>
@@ -132,6 +136,20 @@
   ensuring that your use of Cognita's Google connector complies with
   Google's own terms of service, including the Google Terms of Service and
   the Gmail and Google Workspace API terms.
+</p>
+<p>
+  If you connect your GitHub account to Cognita, you must have the authority to access and
+  modify the repositories you use Cognita with, and that account must be your own. Cognita's
+  GitHub connector requests read/write access to both your public and private repositories
+  (GitHub's <code>repo</code> scope); you remain responsible for ensuring that your use of this
+  connector complies with GitHub's own Terms of Service and Acceptable Use Policies, and for any
+  changes Cognita makes to a repository at your direction.
+</p>
+<p>
+  If you connect your Canva account to Cognita, you must have the authority to access and
+  modify the designs, folders, and assets you use Cognita with, and that account must be your
+  own. You remain responsible for ensuring that your use of Cognita's Canva connector complies
+  with Canva's own Terms of Use.
 </p>
 <p>
   If you believe that someone has accessed your account without permission,
@@ -209,6 +227,15 @@
     than your own, or otherwise to use Google user data in a way that
     violates the Google API Services User Data Policy or Google's other
     applicable terms;
+  </li>
+  <li>
+    use Cognita's GitHub connector to access, modify, or delete a repository you are not
+    authorised to access, or to introduce malicious code, credentials, or other harmful
+    content into a repository;
+  </li>
+  <li>
+    use Cognita's Canva connector to access or modify designs, folders, or assets you are not
+    authorised to access;
   </li>
   <li>
     attempt to gain unauthorised access to Cognita, another user's account,
@@ -289,8 +316,11 @@
   Facebook Pages or Instagram accounts remains subject to those platforms'
   terms, and you are responsible for it. Similarly, any Google Calendar
   events, Google Drive files, or Gmail messages you create, edit, or send
-  through Cognita's Google connector remain subject to Google's own terms,
-  and you are responsible for that content.
+  through Cognita's Google connector, any repository changes you make through
+  Cognita's GitHub connector, and any Canva designs, folders, or assets you
+  create, edit, or manage through Cognita's Canva connector, all remain
+  subject to that platform's own terms, and you are responsible for that
+  content.
 </p>
 <p>
   You should review and verify Output before relying on it, publishing it,
@@ -422,10 +452,10 @@
     <p>
       Cognita may rely on third-party services for functions such as
       authentication (including Google and Meta Platforms), connector
-      integrations (including Google Calendar, Google Drive, and Gmail, and
-      Meta's Facebook and Instagram APIs), payment processing, AI
-      infrastructure, hosting, storage, analytics, security, or other
-      technical operations. Cognita's access to and use of information from
+      integrations (including Google Calendar, Google Drive, and Gmail,
+      Meta's Facebook and Instagram APIs, GitHub, and Canva), payment
+      processing, AI infrastructure, hosting, storage, analytics, security,
+      or other technical operations. Cognita's access to and use of information from
       Google Workspace APIs is limited to the practices described in this
       Agreement and our <a href="/privacy.html">Privacy Policy</a>, and
       complies with the Google API Services User Data Policy, including its
@@ -526,7 +556,6 @@
 </script>
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
-  document.getElementById('lastUpdated').textContent = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 </script>
 
 </body>
