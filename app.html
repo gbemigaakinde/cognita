@@ -29,19 +29,21 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <style>
-  .app-loading-overlay {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-  }
+  /* The loading overlay mirrors #appContentWrap's own layout (a flexed
+     .conversation above a pinned .composer-wrap) instead of centering a
+     generic block, so the skeleton lines up with the real empty-state +
+     composer that appears once data has loaded — no separate "guessed"
+     geometry to keep in sync by hand. */
+  .app-loading-overlay,
   .app-content-wrap {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+  .app-loading-overlay .empty-state { pointer-events: none; }
+  .app-loading-overlay .composer {
+    cursor: default;
   }
   .connectors-modal-banner {
     margin: 0 0 12px;
@@ -173,11 +175,40 @@
       <div class="topbar-spacer"></div>
     </header>
 
-    <div class="app-loading-overlay" id="appLoadingOverlay">
-      <div class="skeleton" style="width:55%;height:16px;border-radius:6px;margin-bottom:14px;"></div>
-      <div class="skeleton" style="width:78%;height:16px;border-radius:6px;margin-bottom:14px;"></div>
-      <div class="skeleton" style="width:42%;height:16px;border-radius:6px;margin-bottom:32px;"></div>
-      <div class="skeleton" style="width:90%;max-width:640px;height:52px;border-radius:14px;"></div>
+    <!-- Mirrors the real #appContentWrap markup below (.conversation >
+         .empty-state, and .composer-wrap > .composer) so every skeleton
+         block sits exactly where its real counterpart will render — the
+         icon mark, title, subtitle, and composer keep their true
+         positions, sizes and spacing instead of an unrelated stack of
+         bars. Update this alongside the empty-state/composer markup if
+         that layout ever changes. -->
+    <div class="app-loading-overlay" id="appLoadingOverlay" aria-hidden="true">
+
+      <div class="conversation">
+        <div class="empty-state">
+          <div class="skeleton empty-state-mark" style="height:34px;"></div>
+          <div class="skeleton" style="width:300px;max-width:70vw;height:30px;border-radius:8px;margin-bottom:var(--space-3);"></div>
+          <div class="skeleton" style="width:380px;max-width:80vw;height:14px;border-radius:6px;margin-bottom:8px;"></div>
+          <div class="skeleton" style="width:240px;max-width:55vw;height:14px;border-radius:6px;"></div>
+        </div>
+      </div>
+
+      <div class="composer-wrap">
+        <div class="composer">
+          <div class="skeleton" style="width:35%;height:16px;border-radius:6px;margin:6px 4px 22px;"></div>
+          <div class="composer-tools-row">
+            <div class="composer-tools-left">
+              <div class="skeleton" style="width:28px;height:28px;border-radius:50%;"></div>
+            </div>
+            <div class="composer-tools-right">
+              <div class="skeleton" style="width:92px;height:28px;border-radius:var(--radius-full);"></div>
+              <div class="skeleton" style="width:32px;height:32px;border-radius:50%;"></div>
+            </div>
+          </div>
+        </div>
+        <p class="composer-hint skeleton" style="width:220px;height:11px;border-radius:6px;margin:10px auto 0;"></p>
+      </div>
+
     </div>
 
     <div class="app-content-wrap" id="appContentWrap" hidden>
