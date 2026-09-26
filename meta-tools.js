@@ -211,6 +211,85 @@ export async function publishInstagramPost(pageAccessToken, igAccountId, { image
   return publishData.id;
 }
 
+/**
+ * Publishes a video to Instagram as a Reel (image posts use
+ * publishInstagramPost above; video always goes through the REELS
+ * container type, which is the Graph API's only video path now that
+ * classic IGTV/feed-video containers are deprecated).
+ *
+ * Video containers process asynchronously on Meta's side, so unlike the
+ * image path this polls the container's status_code until it flips to
+ * FINISHED (or ERROR) before attempting media_publish — publishing a
+ * still-IN_PROGRESS container just fails outright. The poll is bounded
+ * (~10 tries, 3s apart = ~30s) so one Worker invocation can't hang
+ * indefinitely; if the video simply needs longer, the caller's own
+ * retry loop (social-scheduler.js's RETRY_DELAYS_MS) will try again
+ * later against the same still-live upload.
+ */
+export async function publishInstagramVideo(pageAccessToken, igAccountId, { videoUrl, caption }) {
+  const createBody = new URLSearchParams({
+    video_url: videoUrl, caption: caption || '', media_type: 'REELS', access_token: pageAccessToken,
+  });
+  const createRes = await fetch(GRAPH_BASE + '/' + encodeURIComponent(igAccountId) + '/media', { method: 'POST', body: createBody });
+  const createData = await createRes.json().catch(() => null);
+  if (!createRes.ok || (createData && createData.error)) {
+    throw new Error('Instagram video upload failed: ' + (createData && createData.error ? createData.error.message : createRes.status));
+  }
+
+  const creationId = createData.id;
+  const MAX_POLLS = 10;
+  const POLL_DELAY_MS = 3000;
+  let statusCode = 'IN_PROGRESS';
+
+  for (let i = 0; i < MAX_POLLS && statusCode === 'IN_PROGRESS'; i++) {
+    await new Promise((r) => setTimeout(r, POLL_DELAY_MS));
+    const statusRes = await fetch(
+      GRAPH_BASE + '/' + encodeURIComponent(creationId) + '?fields=status_code&access_token=' + encodeURIComponent(pageAccessToken)
+    );
+    const statusData = await statusRes.json().catch(() => null);
+    statusCode = (statusData && statusData.status_code) || 'IN_PROGRESS';
+    if (statusCode === 'ERROR') {
+      throw new Error('Instagram could not process that video.');
+    }
+  }
+
+  if (statusCode !== 'FINISHED') {
+    throw new Error('Instagram is still processing that video — it will be retried shortly.');
+  }
+
+  const publishBody = new URLSearchParams({ creation_id: creationId, access_token: pageAccessToken });
+  const publishRes = await fetch(GRAPH_BASE + '/' + encodeURIComponent(igAccountId) + '/media_publish', { method: 'POST', body: publishBody });
+  const publishData = await publishRes.json().catch(() => null);
+  if (!publishRes.ok || (publishData && publishData.error)) {
+    throw new Error('Instagram publish failed: ' + (publishData && publishData.error ? publishData.error.message : publishRes.status));
+  }
+  return publishData.id;
+}
+
+/** Publishes a single photo to a Facebook Page's feed, with an optional caption. */
+export async function publishFacebookPhoto(pageAccessToken, pageId, { photoUrl, message }) {
+  const body = new URLSearchParams({ url: photoUrl, access_token: pageAccessToken });
+  if (message) body.set('caption', message);
+  const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(pageId) + '/photos', { method: 'POST', body });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.error)) {
+    throw new Error('Facebook photo post failed: ' + (data && data.error ? data.error.message : res.status));
+  }
+  return data.post_id || data.id;
+}
+
+/** Publishes a video to a Facebook Page, with an optional description. */
+export async function publishFacebookVideo(pageAccessToken, pageId, { videoUrl, message }) {
+  const body = new URLSearchParams({ file_url: videoUrl, access_token: pageAccessToken });
+  if (message) body.set('description', message);
+  const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(pageId) + '/videos', { method: 'POST', body });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || (data && data.error)) {
+    throw new Error('Facebook video post failed: ' + (data && data.error ? data.error.message : res.status));
+  }
+  return data.id;
+}
+
 async function _createFacebookPost(uid, args, env) {
   if (!args.message) throw new Error('message is required.');
   const page = await _getPageOrThrow(uid, args, env);
