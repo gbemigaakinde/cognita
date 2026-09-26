@@ -92,6 +92,23 @@ import {
   handleSocialMediaProxy,
 } from './social-scheduler-endpoint.js';
 import { runSocialScheduler } from './social-scheduler.js';
+import {
+  handleInboxList,
+  handleInboxSubscribe,
+  handleInboxRegenerate,
+  handleInboxReply,
+  handleInboxDismiss,
+  handleInboxMarkSpam,
+} from './social-inbox-endpoint.js';
+import { handleMetaWebhookVerify, handleMetaWebhookEvent } from './webhooks/meta-webhook-endpoint.js';
+import {
+  handleInsightsScheduleGet,
+  handleInsightsScheduleUpsert,
+  handleInsightsGenerate,
+  handleInsightsHistory,
+  handleInsightsFileProxy,
+} from './insights-endpoint.js';
+import { runInsightsDigestScheduler } from './insights-digest.js';
 
 function _corsPreflight(env) {
   return new Response(null, {
@@ -312,6 +329,75 @@ export default {
       return handleSocialMediaProxy(request, env);
     }
 
+    // ── AI Inbox (unified Facebook/Instagram comment + DM triage) ──────
+    // Sits right after Social Scheduler, same style of comment header.
+
+    if (request.method === 'GET' && url.pathname === '/api/inbox') {
+      return handleInboxList(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/inbox/subscribe') {
+      return handleInboxSubscribe(request, env);
+    }
+
+    if (request.method === 'POST' && /^\/api\/inbox\/[^/]+\/regenerate$/.test(url.pathname)) {
+      const itemId = url.pathname.split('/')[3];
+      return handleInboxRegenerate(request, env, itemId);
+    }
+
+    if (request.method === 'POST' && /^\/api\/inbox\/[^/]+\/reply$/.test(url.pathname)) {
+      const itemId = url.pathname.split('/')[3];
+      return handleInboxReply(request, env, itemId);
+    }
+
+    if (request.method === 'POST' && /^\/api\/inbox\/[^/]+\/dismiss$/.test(url.pathname)) {
+      const itemId = url.pathname.split('/')[3];
+      return handleInboxDismiss(request, env, itemId);
+    }
+
+    if (request.method === 'POST' && /^\/api\/inbox\/[^/]+\/spam$/.test(url.pathname)) {
+      const itemId = url.pathname.split('/')[3];
+      return handleInboxMarkSpam(request, env, itemId);
+    }
+
+    // Hit directly by Meta's servers — Webhooks product, separate from
+    // the OAuth login flow. No Authorization header will ever be
+    // present, same category as the Data Deletion callback above, so it
+    // deliberately sits outside requireAuth; handleMetaWebhookEvent does
+    // its own HMAC-signature check on the raw body instead.
+    if (request.method === 'GET' && url.pathname === '/webhooks/meta') {
+      return handleMetaWebhookVerify(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/webhooks/meta') {
+      return handleMetaWebhookEvent(request, env, ctx);
+    }
+
+    // ── AI Insights Digest (AI-written performance report as PDF) ─────
+
+    if (request.method === 'GET' && url.pathname === '/api/insights/schedule') {
+      return handleInsightsScheduleGet(request, env);
+    }
+
+    if (request.method === 'PUT' && url.pathname === '/api/insights/schedule') {
+      return handleInsightsScheduleUpsert(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/insights/generate') {
+      return handleInsightsGenerate(request, env);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/insights/history') {
+      return handleInsightsHistory(request, env);
+    }
+
+    // Hit directly by the browser (email link click) or a WhatsApp link
+    // preview fetch — no Authorization header possible, signed token is
+    // the access check, same pattern as /api/social/media/file above.
+    if (request.method === 'GET' && url.pathname === '/api/insights/file') {
+      return handleInsightsFileProxy(request, env);
+    }
+
     // ── Connectors (GitHub, Google, Facebook, Canva) ─────
 
     // Must come before the /:provider/start check below, since both
@@ -491,10 +577,12 @@ export default {
     });
   },
 
-  // Fires on the Cron Trigger set in wrangler.jsonc. Only the reminders
-  // feature uses this — everything else in the Worker is still request-driven.
+  // Fires on the Cron Trigger set in wrangler.jsonc (currently every 5
+  // minutes — frequent enough for all four jobs below without changing
+  // any of their existing latency).
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runReminderScheduler(env));
     ctx.waitUntil(runSocialScheduler(env));
+    ctx.waitUntil(runInsightsDigestScheduler(env));
   },
 };
