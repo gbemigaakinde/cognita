@@ -45,6 +45,13 @@ export const PLANS = {
       // Free users never get these — text-only flashcards only.
       flashcardImagePerDay: 0,
       activeReminders: 10,
+      // AI Inbox and Insights Digest are both gated off entirely on
+      // Starter via planHasAiInbox/planHasInsightsDigest below (same
+      // features.connectorTools-style flag pattern), so these limits
+      // are never actually reached on this plan — kept at 0 anyway so
+      // the shape of `limits` stays identical across every plan.
+      inboxAiDraftPerDay: 0,
+      insightsDigestPerDay: 0,
     },
     models: {
       chat: ['fast'],              // maps to internal model tier keys below
@@ -61,6 +68,8 @@ export const PLANS = {
       longContext: false,
       designTemplates: false,
       connectorTools: false,       // chat cannot call connected-app tools
+      aiInbox: false,               // AI Inbox (comment/DM triage) — see planHasAiInbox
+      insightsDigest: false,        // AI Insights Digest — see planHasInsightsDigest
     },
   },
   plus: {
@@ -88,6 +97,8 @@ export const PLANS = {
       // burn through many images in one generation call.
       flashcardImagePerDay: 20,
       activeReminders: 40,
+      inboxAiDraftPerDay: 30,
+      insightsDigestPerDay: 4,
     },
     models: {
       chat: ['fast', 'advanced'],
@@ -100,6 +111,8 @@ export const PLANS = {
       longContext: true,
       designTemplates: true,
       connectorTools: true,
+      aiInbox: true,
+      insightsDigest: true,
     },
   },
   studio: {
@@ -124,6 +137,8 @@ export const PLANS = {
       noteTakerChunksPerDay: 8000,  // roughly 17.8 hours/day
       flashcardImagePerDay: 80,
       activeReminders: 150,
+      inboxAiDraftPerDay: 150,
+      insightsDigestPerDay: 20,
     },
     models: {
       chat: ['fast', 'advanced', 'reasoning'],
@@ -136,6 +151,8 @@ export const PLANS = {
       longContext: true,
       designTemplates: true,
       connectorTools: true,
+      aiInbox: true,
+      insightsDigest: true,
     },
   },
 
@@ -170,6 +187,8 @@ export const PLANS = {
       noteTakerChunksPerDay: UNLIMITED,
       flashcardImagePerDay: UNLIMITED,
       activeReminders: UNLIMITED,
+      inboxAiDraftPerDay: UNLIMITED,
+      insightsDigestPerDay: UNLIMITED,
     },
     models: {
       // Every tier a regular plan can reach, PLUS 'v0' — the Vercel v0
@@ -189,6 +208,8 @@ export const PLANS = {
       longContext: true,
       designTemplates: true,
       connectorTools: true,
+      aiInbox: true,
+      insightsDigest: true,
     },
   },
 };
@@ -208,6 +229,19 @@ export function planHasConnectorTools(planId) {
 // changes.
 export function planHasSocialScheduling(planId) {
   return planHasConnectorTools(planId);
+}
+
+// AI Inbox (unified comment/DM triage with AI-drafted replies) — its own
+// flag rather than reusing planHasConnectorTools, since this is a
+// heavier, LLM-per-item feature that a plan could reasonably gate
+// differently from generic connector tool-use later.
+export function planHasAiInbox(planId) {
+  return !!getPlan(planId).features.aiInbox;
+}
+
+// AI Insights Digest (scheduled/on-demand AI performance report as PDF).
+export function planHasInsightsDigest(planId) {
+  return !!getPlan(planId).features.insightsDigest;
 }
 
 // Internal model tier -> actual provider/model mapping.
