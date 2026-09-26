@@ -88,6 +88,8 @@ import {
   handleScheduleCreate,
   handleScheduleList,
   handleScheduleCancel,
+  handleSocialMediaUpload,
+  handleSocialMediaProxy,
 } from './social-scheduler-endpoint.js';
 import { runSocialScheduler } from './social-scheduler.js';
 
@@ -294,6 +296,20 @@ export default {
     if (request.method === 'DELETE' && /^\/api\/social\/schedule\/[^/]+$/.test(url.pathname)) {
       const postId = url.pathname.split('/')[4];
       return handleScheduleCancel(request, env, postId);
+    }
+
+    // Upload a photo/video to attach to a scheduled post (requireAuth,
+    // like every other /api/social/* route above).
+    if (request.method === 'POST' && url.pathname === '/api/social/media') {
+      return handleSocialMediaUpload(request, env);
+    }
+
+    // Hit directly by Meta's Graph API servers when publishing a post
+    // that has media attached — never by the browser, so it deliberately
+    // sits outside requireAuth. See social-media-endpoint.js's header
+    // comment for why a signed token is the access check here instead.
+    if (request.method === 'GET' && url.pathname === '/api/social/media/file') {
+      return handleSocialMediaProxy(request, env);
     }
 
     // ── Connectors (GitHub, Google, Facebook, Canva) ─────
