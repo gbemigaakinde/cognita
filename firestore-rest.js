@@ -265,7 +265,19 @@ export async function fsQuery(collectionId, fieldName, value, orderByField, limi
   const rows = await res.json();
   return rows
     .filter((r) => r.document)
-    .map((r) => _fsDecodeFields(r.document.fields || {}));
+    .map((r) => {
+      const decoded = _fsDecodeFields(r.document.fields || {});
+      // Most collections already store their own 'id' field explicitly
+      // (resources, reminders, pushSubscriptions, scheduledPosts...) —
+      // this is only a fallback for the few that don't (e.g.
+      // fb_login_index, keyed by Facebook user id with no 'id' field of
+      // its own), added under a different key so it can never collide
+      // with or shadow an existing stored field.
+      if (decoded._id === undefined) {
+        decoded._id = String(r.document.name || '').split('/').pop() || null;
+      }
+      return decoded;
+    });
 }
 
 /**
