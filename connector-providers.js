@@ -106,6 +106,13 @@ const SCOPES = {
   facebook: [
     'pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'pages_manage_metadata',
     'instagram_basic', 'instagram_content_publish', 'read_insights', 'business_management',
+    // ── AI Inbox scopes (comments + DMs) — see hasInboxScope() below.
+    // NOTE: 'pages_manage_engagement' is this codebase's best-current-
+    // knowledge name for Facebook Page comment moderation/reply under
+    // Graph API v21.0 (meta-tools.js's GRAPH_VERSION) — confirm against
+    // Meta's live App Review docs before submitting, since Meta renames
+    // permissions periodically.
+    'pages_messaging', 'instagram_manage_messages', 'instagram_manage_comments', 'pages_manage_engagement',
   ].join(','),
   canva: 'folder:permission:read design:content:read design:content:write asset:read profile:read design:meta:read asset:write folder:read',
 };
@@ -153,6 +160,22 @@ export function hasSufficientScope(provider, storedScope) {
     );
   }
   return true; // not implemented for canva yet
+}
+
+// ── AI Inbox scope check — deliberately separate from
+// hasSufficientScope('facebook', ...) above. A user can have the
+// Social Scheduler's scopes without the Inbox's (or vice versa, in
+// theory) — someone who never re-consents to the newer four scopes
+// should keep scheduling working while just being told to reconnect
+// for the Inbox specifically, rather than being locked out of both.
+export function hasInboxScope(storedScope) {
+  const granted = (storedScope || '').split(',').map((s) => s.trim());
+  return (
+    granted.includes('pages_messaging') &&
+    granted.includes('instagram_manage_messages') &&
+    granted.includes('instagram_manage_comments') &&
+    granted.includes('pages_manage_engagement')
+  );
 }
 
 // ── 1. Authorize URL (redirect the user here) ──────────────────────
