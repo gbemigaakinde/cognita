@@ -13,6 +13,12 @@ import {
   cancelScheduledPost,
 } from './social-scheduler.js';
 
+// Re-exported so worker.js can import every Social Scheduler route (media
+// included) from this one endpoint module, the same way it already does
+// for pages/schedule/cancel — social-media-endpoint.js stays a plain
+// implementation module, not something worker.js reaches into directly.
+export { handleSocialMediaUpload, handleSocialMediaProxy } from './social-media-endpoint.js';
+
 function _corsJsonHeaders(env) {
   return { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': env?.APP_ORIGIN || '*' };
 }
