@@ -18,6 +18,7 @@ import {
 import { handlePaymentInitialize, handlePaymentStatus } from './payment-endpoint.js';
 import { handlePaystackWebhook } from './webhook-endpoint.js';
 import { handleAccountRequest, handleUsageRequest } from './account-endpoint.js';
+import { handleAccountDeletionRequest } from './account-deletion-endpoint.js';
 import { handleSubscriptionCancel } from './cancel-endpoint.js';
 import { handleChatSave, handleChatDelete, handleChatList, handleChatGet } from './chat-sync-endpoint.js';
 import { handleFilesList, handleFileGet } from './files-endpoint.js';
@@ -163,6 +164,14 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/api/usage') {
       return handleUsageRequest(request, env);
+    }
+
+    // Self-serve "delete my account" — see account.html's delete-account
+    // modal for the multi-step confirmation UI, and account-deletion.js
+    // for exactly what this purges. Distinct from the Meta-initiated
+    // callback below, which fires from Facebook's own settings instead.
+    if (request.method === 'POST' && url.pathname === '/api/account/delete') {
+      return handleAccountDeletionRequest(request, env);
     }
 
     if (request.method === 'POST' && url.pathname === '/api/chat') {
