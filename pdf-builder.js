@@ -586,3 +586,13 @@ export async function buildFlashcardsPdfBytes(structuredContent, title, template
   const state = _layoutFlashcards(structuredContent, title, theme);
   return _assemblePdf(state.pages, theme, state.images, true);
 }
+
+// Same as buildStructuredPdf, but returns raw PDF bytes instead of a
+// base64 string — used by insights-digest.js so the Insights Digest PDF
+// can go straight to b2UploadFile without an encode-then-decode round
+// trip, exactly the same reasoning as buildFlashcardsPdfBytes above.
+export async function buildStructuredPdfBytes(structured, title, templateId) {
+  const theme = _resolveTheme(templateId);
+  const state = _layoutStructured(structured, title, theme);
+  return _assemblePdf(state.pages, theme, state.images, true);
+}
