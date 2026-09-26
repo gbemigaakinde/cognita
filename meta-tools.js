@@ -335,13 +335,15 @@ export async function sendPageDirectMessage(pageAccessToken, pageId, recipientId
   const data = await res.json().catch(() => null);
   if (!res.ok || (data && data.error)) {
     const err = data && data.error;
-    // Meta's "outside the 24-hour messaging window" rejection — code/
-    // subcode combination per current docs; surfaced with a clear
-    // isWindowExpired flag so social-inbox.js can give the user a
-    // specific message instead of a generic failure. Verify this
-    // code/subcode pair against Meta's live docs at deploy time, since
-    // Meta has changed these before.
-    if (err && (err.code === 10 || err.error_subcode === 2018278)) {
+    // Meta's "outside the 24-hour messaging window" rejection — always
+    // code 10, but code 10 alone is overloaded (it also covers missing
+    // permissions), so we key off the specific documented subcodes
+    // instead: 2018278 (general), 2534022, and 2018065 (News Messaging
+    // variant). Surfaced with a clear isWindowExpired flag so
+    // social-inbox.js can give the user a specific message instead of a
+    // generic failure. Verify this subcode list against Meta's live docs
+    // at deploy time, since Meta has changed these before.
+    if (err && err.code === 10 && [2018278, 2534022, 2018065].includes(err.error_subcode)) {
       const e = new Error('Too much time has passed since their last message — Meta only allows a reply within 24 hours.');
       e.isWindowExpired = true;
       throw e;
@@ -366,15 +368,20 @@ export async function hideComment(pageAccessToken, commentId, hidden = true) {
  * Subscribes a Page to the webhook fields the AI Inbox needs
  * (comments/messages). Called once per Page, lazily, the first time a
  * user opens the Inbox page — see social-inbox.js's syncPageOwners /
- * social-inbox-endpoint.js's /api/inbox/subscribe. Instagram comments
- * ride on the Page's own 'feed' subscription once the linked IG
- * account is set up (per current Graph API v21.0 docs) — verify this
- * still holds at deploy time, since Meta has occasionally required a
- * separate 'instagram' object subscription instead.
+ * social-inbox-endpoint.js's /api/inbox/subscribe.
+ *
+ * Instagram comments do NOT ride on the Page's own 'feed' field —
+ * confirmed against Meta's live docs this does not hold. 'feed' only
+ * covers Facebook Page comments (webhooks/meta-webhook-endpoint.js's
+ * `field === 'feed'` branch); Instagram comments arrive as their own
+ * `field === 'comments'` change and must be explicitly subscribed to
+ * here, or that branch never fires. Also requires Business Verification
+ * on the connected Business and instagram_manage_comments Advanced
+ * Access — re-verify at deploy time, since Meta has changed this before.
  */
 export async function subscribePageToWebhooks(pageAccessToken, pageId) {
   const body = new URLSearchParams({
-    subscribed_fields: 'feed,messages,messaging_postbacks',
+    subscribed_fields: 'feed,comments,messages,messaging_postbacks',
     access_token: pageAccessToken,
   });
   const res = await fetch(GRAPH_BASE + '/' + encodeURIComponent(pageId) + '/subscribed_apps', { method: 'POST', body });
